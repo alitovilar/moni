@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Héroe vs Gatos - Mini Juego</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Arial', sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+            border: 4px solid #fff;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: #87CEEB;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        
+        #ui div {
+            margin: 5px 0;
+        }
+        
+        #startScreen, #gameOverScreen, #winScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            z-index: 20;
+        }
+        
+        #startScreen h1, #gameOverScreen h1, #winScreen h1 {
+            font-size: 36px;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.5);
+        }
+        
+        button {
+            padding: 15px 40px;
+            font-size: 20px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        button:hover {
+            background: #ff5252;
+            transform: scale(1.05);
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="ui">
+            <div>❤️ Vidas: <span id="livesDisplay">3</span></div>
+            <div>🎯 Nivel: <span id="levelDisplay">1</span></div>
+            <div>💕 Corazones al gato: <span id="hitsDisplay">0</span>/<span id="hitsNeededDisplay">5</span></div>
+        </div>
+        
+        <div id="controls">
+            ← → Moverse | ESPACIO Disparar corazones
+        </div>
+        
+        <div id="startScreen">
+            <h1>🦸 Héroe vs Gatos 🐱</h1>
+            <p style="margin-bottom: 20px; font-size: 18px;">Dispara corazones para hacer amigos a los gatos</p>
+            <button onclick="startGame()">▶️ Jugar</button>
+        </div>
+        
+        <div id="gameOverScreen" class="hidden">
+            <h1>😢 Game Over</h1>
+            <p style="margin-bottom: 20px; font-size: 18px;">¡El gato te ganó!</p>
+            <button onclick="startGame()">🔄 Reintentar</button>
+        </div>
+        
+        <div id="winScreen" class="hidden">
+            <h1>🎉 ¡Ganaste!</h1>
+            <p style="margin-bottom: 20px; font-size: 18px;">¡El gato ahora es tu amigo!</p>
+            <button onclick="startGame()">🔄 Jugar de nuevo</button>
+        </div>
+    </div>
+
+    <script>
+        // Configuración del canvas
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Estados del juego
+        let gameState = 'start'; // start, playing, gameover, win
+        let level = 1;
+        let lives = 3;
+        let hitsOnCat = 0;
+        let hitsNeeded = 5;
+        
+        // Cargar imágenes
+        const images = {};
+        const imageFiles = {
+            fondo: 'fondo.png',
+            hero: 'parado.png',
+            heroRight: ['r1.png', 'r2.png', 'r3.png', 'r4.png', 'r5.png', 'r6.png'],
+            heroLeft: ['l1.png', 'l2.png', 'l3.png', 'l4.png', 'l5.png', 'l6.png'],
+            cat: ['gato0.png', 'gato1.png', 'gato2.png', 'gato3.png', 'gato4.png'],
+            heart: 'heart_lleno.png'
+        };
+        
+        let imagesLoaded = 0;
+        const totalImages = Object.keys(imageFiles).length + imageFiles.heroRight.length + imageFiles.heroLeft.length + imageFiles.cat.length;
+        
+        // Precargar imágenes
+        function preloadImages(callback) {
+            // Cargar fondo
+            images.fondo = new Image();
+            images.fondo.src = imageFiles.fondo;
+            images.fondo.onload = () => checkLoadComplete(callback);
+            
+            // Cargar corazón
+            images.heart = new Image();
+            images.heart.src = imageFiles.heart;
+            images.heart.onload = () => checkLoadComplete(callback);
+            
+            // Cargar frames del héroe derecho
+            images.heroRightFrames = [];
+            imageFiles.heroRight.forEach((file, index) => {
+                const img = new Image();
+                img.src = file;
+                img.onload = () => checkLoadComplete(callback);
+                images.heroRightFrames[index] = img;
+            });
+            
+            // Cargar frames del héroe izquierdo
+            images.heroLeftFrames = [];
+            imageFiles.heroLeft.forEach((file, index) => {
+                const img = new Image();
+                img.src = file;
+                img.onload = () => checkLoadComplete(callback);
+                images.heroLeftFrames[index] = img;
+            });
+            
+            // Cargar frames del gato
+            images.catFrames = [];
+            imageFiles.cat.forEach((file, index) => {
+                const img = new Image();
+                img.src = file;
+                img.onload = () => checkLoadComplete(callback);
+                images.catFrames[index] = img;
+            });
+            
+            // Imagen estática del héroe
+            images.hero = new Image();
+            images.hero.src = imageFiles.hero;
+            images.hero.onload = () => checkLoadComplete(callback);
+        }
+        
+        function checkLoadComplete(callback) {
+            imagesLoaded++;
+            if (imagesLoaded >= totalImages) {
+                callback();
+            }
+        }
+        
+        // Jugador
+        const player = {
+            x: 100,
+            y: 450,
+            width: 60,
+            height: 80,
+            speed: 5,
+            direction: 'right',
+            frameIndex: 0,
+            frameTimer: 0,
+            isMoving: false
+        };
+        
+        // Gato enemigo
+        const cat = {
+            x: 600,
+            y: 450,
+            width: 70,
+            height: 70,
+            speed: 2,
+            frameIndex: 0,
+            frameTimer: 0,
+            isFriend: false
+        };
+        
+        // Proyectiles (corazones)
+        let projectiles = [];
+        
+        // Controles
+        const keys = {};
+        
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && gameState === 'playing') {
+                shootHeart();
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+        
+        // Disparar corazón
+        function shootHeart() {
+            projectiles.push({
+                x: player.x + player.width / 2,
+                y: player.y + player.height / 2,
+                width: 30,
+                height: 30,
+                speed: 8,
+                direction: player.direction
+            });
+        }
+        
+        // Actualizar jugador
+        function updatePlayer() {
+            player.isMoving = false;
+            
+            if (keys['ArrowLeft'] || keys['KeyA']) {
+                player.x -= player.speed;
+                player.direction = 'left';
+                player.isMoving = true;
+            }
+            if (keys['ArrowRight'] || keys['KeyD']) {
+                player.x += player.speed;
+                player.direction = 'right';
+                player.isMoving = true;
+            }
+            
+            // Limites del canvas
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+            
+            // Animación
+            if (player.isMoving) {
+                player.frameTimer++;
+                if (player.frameTimer > 8) {
+                    player.frameTimer = 0;
+                    player.frameIndex = (player.frameIndex + 1) % 6;
+                }
+            } else {
+                player.frameIndex = 0;
+            }
+        }
+        
+        // Actualizar gato
+        function updateCat() {
+            if (cat.isFriend) return;
+            
+            // Movimiento hacia el jugador
+            const dx = player.x - cat.x;
+            const dy = player.y - cat.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > 0) {
+                cat.x += (dx / distance) * cat.speed;
+                cat.y += (dy / distance) * cat.speed;
+            }
+            
+            // Animación del gato
+            cat.frameTimer++;
+            if (cat.frameTimer > 10) {
+                cat.frameTimer = 0;
+                cat.frameIndex = (cat.frameIndex + 1) % 5;
+            }
+            
+            // Colisión con el jugador
+            if (checkCollision(player, cat)) {
+                lives--;
+                updateUI();
+                
+                // Empujar al gato lejos
+                const pushX = cat.x > player.x ? 200 : -200;
+                cat.x += pushX;
+                
+                if (lives <= 0) {
+                    gameState = 'gameover';
+                    document.getElementById('gameOverScreen').classList.remove('hidden');
+                }
+            }
+        }
+        
+        // Actualizar proyectiles
+        function updateProjectiles() {
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const proj = projectiles[i];
+                proj.x += proj.speed * (proj.direction === 'right' ? 1 : -1);
+                
+                // Eliminar si sale del canvas
+                if (proj.x < 0 || proj.x > canvas.width) {
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+                
+                // Colisión con el gato
+                if (!cat.isFriend && checkCollision(proj, cat)) {
+                    hitsOnCat++;
+                    updateUI();
+                    projectiles.splice(i, 1);
+                    
+                    // Efecto de golpe
+                    cat.x += proj.direction === 'right' ? 20 : -20;
+                    
+                    // Verificar si ganó
+                    if (hitsOnCat >= hitsNeeded) {
+                        cat.isFriend = true;
+                        setTimeout(() => {
+                            gameState = 'win';
+                            document.getElementById('winScreen').classList.remove('hidden');
+                        }, 1000);
+                    }
+                }
+            }
+        }
+        
+        // Detección de colisiones
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+        
+        // Dibujar juego
+        function draw() {
+            // Limpiar canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Dibujar fondo
+            if (images.fondo.complete) {
+                ctx.drawImage(images.fondo, 0, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = '#87CEEB';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Dibujar suelo
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(0, 530, canvas.width, 70);
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, 530, canvas.width, 20);
+            
+            // Dibujar jugador
+            drawPlayer();
+            
+            // Dibujar gato
+            drawCat();
+            
+            // Dibujar proyectiles
+            drawProjectiles();
+        }
+        
+        function drawPlayer() {
+            let frames = player.direction === 'right' ? images.heroRightFrames : images.heroLeftFrames;
+            
+            if (frames && frames[player.frameIndex]) {
+                ctx.drawImage(frames[player.frameIndex], player.x, player.y, player.width, player.height);
+            } else {
+                ctx.fillStyle = '#ff6b6b';
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+            }
+        }
+        
+        function drawCat() {
+            if (cat.isFriend) {
+                // Gato amigo - mostrar frame feliz
+                if (images.catFrames[4]) {
+                    ctx.drawImage(images.catFrames[4], cat.x, cat.y, cat.width, cat.height);
+                }
+                
+                // Dibujar corazones alrededor
+                ctx.font = '30px Arial';
+                ctx.fillText('💕', cat.x - 20, cat.y - 30);
+                ctx.fillText('💕', cat.x + cat.width, cat.y - 30);
+            } else {
+                if (images.catFrames[cat.frameIndex]) {
+                    ctx.drawImage(images.catFrames[cat.frameIndex], cat.x, cat.y, cat.width, cat.height);
+                } else {
+                    ctx.fillStyle = '#ffa500';
+                    ctx.fillRect(cat.x, cat.y, cat.width, cat.height);
+                }
+            }
+        }
+        
+        function drawProjectiles() {
+            projectiles.forEach(proj => {
+                if (images.heart.complete) {
+                    ctx.drawImage(images.heart, proj.x, proj.y, proj.width, proj.height);
+                } else {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.beginPath();
+                    ctx.arc(proj.x + proj.width/2, proj.y + proj.height/2, proj.width/2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+        
+        // Actualizar UI
+        function updateUI() {
+            document.getElementById('livesDisplay').textContent = lives;
+            document.getElementById('levelDisplay').textContent = level;
+            document.getElementById('hitsDisplay').textContent = hitsOnCat;
+            document.getElementById('hitsNeededDisplay').textContent = hitsNeeded;
+        }
+        
+        // Iniciar juego
+        function startGame() {
+            gameState = 'playing';
+            level = 1;
+            lives = 3;
+            hitsOnCat = 0;
+            hitsNeeded = 5;
+            
+            player.x = 100;
+            player.y = 450;
+            player.direction = 'right';
+            
+            cat.x = 600;
+            cat.y = 450;
+            cat.isFriend = false;
+            
+            projectiles = [];
+            
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('winScreen').classList.add('hidden');
+            
+            updateUI();
+            gameLoop();
+        }
+        
+        // Bucle principal del juego
+        function gameLoop() {
+            if (gameState !== 'playing') return;
+            
+            updatePlayer();
+            updateCat();
+            updateProjectiles();
+            draw();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Inicializar
+        preloadImages(() => {
+            console.log('Todas las imágenes cargadas');
+            // Dibujar pantalla inicial
+            draw();
+        });
+        
+        // Dibujar inicialmente
+        draw();
+    </script>
+</body>
+</html>
